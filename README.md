@@ -76,17 +76,41 @@ avg ttft 0.25s · Σ excl 346/s · Σ incl 277/s · 2 msgs · 700 out tokens · 
 
 默认启用。仅 TUI 模式生效（RPC/print 模式自动跳过）。
 
-## 正式安装（暂缓，按要求未执行）
+## 正式安装
 
-任选其一：
+已在本机以 local-path 方式全局安装（不复制文件，源码单份在项目目录）：
 
 ```bash
-# 方式 A：链接到全局扩展目录
-ln -s /home/ray/Projects/pi-statistic-plugin ~/.pi/agent/extensions/pi-token-speed
-
-# 方式 B：写入 settings.json
-# { "extensions": ["/home/ray/Projects/pi-statistic-plugin"] }
+pi install /home/ray/Projects/pi-statistic-plugin   # 写入 ~/.pi/agent/settings.json
+pi list                                             # 查看已装包
+pi remove /home/ray/Projects/pi-statistic-plugin    # 卸载
 ```
+
+注意：不要同时使用全局安装与项目内 `.pi/extensions/`，会双重加载（命令重名、footer 互抢）。
+
+### 发布到 npm / GitHub（任选）
+
+```bash
+# npm：需要 scope 时改 name 为 @scope/pi-token-speed
+npm publish
+
+# 之后任何人在 pi 里安装：
+pi install npm:pi-token-speed
+
+# 或推到 GitHub 后打 tag：
+git remote add origin git@github.com:ray/pi-token-speed.git
+git push -u origin main --tags
+git tag v0.1.0 && git push origin v0.1.0
+pi install git:github.com:ray/pi-token-speed@v0.1.0
+```
+
+`package.json` 已按 pi 包规范备好：`pi.extensions` 入口、`pi-package` keyword（图库发现）、
+`peerDependencies` 声明 pi 捆绑包（运行时由 pi 提供）、`files` 限定发布内容。
+
+## 项目内使用（旧方案，已被全局安装取代）
+
+如需限制在某个项目内启用，可在该项目下 `pi install -l /home/ray/Projects/pi-statistic-plugin`
+（写入项目 `.pi/settings.json`，团队共享，首次启动需信任项目）。
 
 ## 实现原理（可行性要点）
 
