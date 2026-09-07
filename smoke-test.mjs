@@ -38,7 +38,8 @@ console.log("commands:", [...commands.keys()].join(","));
 
 // ---- fake footer / ui infrastructure ----
 let renderCalls = 0;
-const theme = { fg: (_c, s) => s, bold: (s) => s };
+let theme = { fg: (_c, s) => s, bold: (s) => s };
+globalThis.__theme = theme;
 let lastLines = [];
 const tui = { requestRender: () => { queueMicrotask(() => globalThis.__footer?.render(100)); } };
 
@@ -60,15 +61,15 @@ const mkCtx = (entries) => ({
 		notify: (msg) => console.log("[notify]", msg),
 		setFooter: (factory) => {
 			if (!factory) { console.log("[footer] cleared"); return; }
-			const comp = factory(tui, theme, footerData);
+			const comp = factory(tui, globalThis.__theme ?? theme, footerData);
 			comp.render = ((orig) => (w) => { renderCalls++; lastLines = orig(w); return lastLines; })(comp.render.bind(comp));
 			globalThis.__footer = comp;
 			console.log("[footer] installed");
 		},
 		custom: async (factory) => {
-			const comp = factory(tui, theme, {}, () => {});
+			const comp = factory(tui, globalThis.__theme ?? theme, {}, () => {});
 			globalThis.__overlayComp = comp;
-			globalThis.__render = () => { globalThis.__overlayLines = comp.render(100); return globalThis.__overlayLines; };
+			globalThis.__render = (w = 100) => { globalThis.__overlayLines = comp.render(w); return globalThis.__overlayLines; };
 			globalThis.__render();
 			// resolve immediately; tests drive the retained component via __overlayComp
 			return undefined;
@@ -217,5 +218,49 @@ console.log("two-level navigation OK (open -> cycle -> back -> close)");
 
 // restore footer monitor for the restore test below
 await commands.get("tokspeed").handler("on", mkCtx());
+
+// ---- narrow-terminal width safety (real ANSI codes) ----
+console.log("\n== width safety (narrow terminals, ANSI-aware) ==");
+const { visibleWidth } = await jiti.import("@earendil-works/pi-tui");
+const ANSI = (c, s) => `\x1b[${c}m${s}\x1b[0m`;
+globalThis.__theme = {
+  fg: (c, s) => (c === "accent" ? ANSI("36", s) : c === "dim" ? ANSI("2", s) : c === "warning" ? ANSI("33", s) : c === "error" ? ANSI("31", s) : s),
+  bold: (s) => ANSI("1", s),
+};
+const checkWidths = (lines, w, tag) => {
+  for (const l of lines) {
+    const vw = visibleWidth(l);
+    assert(vw <= w, `${tag}: line ${vw} > ${w} cols: ${JSON.stringify(l.slice(0, 70))}`);
+  }
+};
+
+// restore history into a fresh context, footer re-applied with ANSI theme
+await handlers.get("session_start")({ reason: "resume" }, mkCtx(persistedEntries));
+for (const w of [120, 80, 60, 40, 25]) checkWidths(footer().render(w), w, `footer@${w}`);
+console.log("footer @120/80/60/40/25 cols OK");
+
+// log overlay at multiple widths (drives the same component pi would render)
+await commands.get("tokspeed").handler("log", mkCtx(persistedEntries));
+for (const w of [100, 60, 40, 30]) checkWidths(globalThis.__render(w), w, `log@${w}`);
+globalThis.__overlayComp.handleInput("\x1b");
+console.log("log overlay @100/60/40/30 cols OK");
+
+// transcript subtotals at brutal widths
+const msgComp = entryRenderers.get("tokspeed-msg")({ data: persistedEntries[0].data }, { expanded: false }, globalThis.__theme);
+const runComp = entryRenderers.get("tokspeed-run")({ data: runEntry.data }, { expanded: false }, globalThis.__theme);
+for (const w of [100, 30, 14]) {
+  checkWidths(msgComp.render(w), w, `msg-subtotal@${w}`);
+  checkWidths(runComp.render(w), w, `run-subtotal@${w}`);
+}
+console.log("subtotals @100/30/14 cols OK");
+
+// settings dialog (SettingsList is pi-built-in; verify our hint rows too)
+await commands.get("tokspeed").handler("set", mkCtx());
+for (const w of [100, 40]) checkWidths(globalThis.__render(w), w, `settings@${w}`);
+globalThis.__overlayComp.handleInput("\x1b");
+console.log("settings @100/40 cols OK");
+
+// restore identity theme footer for any later checks
+globalThis.__theme = theme;
 
 console.log(`\nPASS: per-message stats, incl/excl TTFT speeds, TTFT, tool-time exclusion, persistence (${persistedEntries.length} entries), restore OK`);

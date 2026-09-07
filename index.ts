@@ -534,16 +534,30 @@ export default function (pi: ExtensionAPI) {
 					// stats line). Colored parts (ctx%, accent ⚡) keep their own color:
 					// an inner reset would clear an outer dim wrapper.
 					const styledParts = allParts.map((p) => (p.includes("\x1b[") ? p : theme.fg("dim", p)));
+					const styledLeft = styledParts.join(" ");
 					const leftPlain = allParts.map((p) => stripAnsi(p)).join(" ");
 					const rightPlain = stripAnsi(rightSide);
-					let statsLine: string;
+					const leftWidth = visibleWidth(leftPlain);
+					const rightWidth = visibleWidth(rightPlain);
 					const minPad = 2;
-					const total = visibleWidth(leftPlain) + minPad + visibleWidth(rightPlain);
-					if (total <= width) {
-						const pad = " ".repeat(width - visibleWidth(leftPlain) - visibleWidth(rightPlain));
-						statsLine = styledParts.join(" ") + theme.fg("dim", pad + rightSide);
+					let statsLine: string;
+					if (leftWidth + minPad + rightWidth <= width) {
+						// Full fit: right-align the model name.
+						const pad = " ".repeat(width - leftWidth - rightWidth);
+						statsLine = styledLeft + theme.fg("dim", pad + rightSide);
+					} else if (leftWidth + 1 <= width) {
+						// Keep the stats, squeeze the right side into the remaining space.
+						const availableForRight = width - leftWidth - minPad;
+						if (availableForRight >= 1) {
+							const right = truncateToWidth(rightSide, availableForRight, "");
+							const pad = " ".repeat(width - leftWidth - visibleWidth(right));
+							statsLine = styledLeft + theme.fg("dim", pad + right);
+						} else {
+							statsLine = styledLeft;
+						}
 					} else {
-						statsLine = truncateToWidth(leftPlain, width, "...") + theme.fg("dim", rightPlain);
+						// Stats alone exceed the width: ANSI-aware truncation, no right side.
+						statsLine = truncateToWidth(styledLeft, width, theme.fg("dim", "…"));
 					}
 
 					const lines = [
@@ -796,7 +810,11 @@ export default function (pi: ExtensionAPI) {
 		if (rec.tpsExcl != null) bits.push(`▲${rec.tpsExcl.toFixed(0)}/s`);
 		if (rec.tpsIncl != null) bits.push(`▲+${rec.tpsIncl.toFixed(0)}/s`);
 		if (rec.aborted) bits.push("✱ aborted");
-		return new Text(theme.fg("dim", `▏ ${bits.join(" · ")}`), 0, 0);
+		const line = theme.fg("dim", `▏ ${bits.join(" · ")}`);
+		return {
+			render: (w: number) => [truncateToWidth(line, w, "")],
+			invalidate: () => {},
+		};
 	});
 
 	// Per-run subtotal: separates pure model time from tool-execution time.
@@ -813,7 +831,11 @@ export default function (pi: ExtensionAPI) {
 		bits.push(`wall ${fmtDur(rec.wallMs)}`);
 		if (rec.modelMs > 0) bits.push(`${(rec.tokens / (rec.modelMs / 1000)).toFixed(0)}/s incl`);
 		if (rec.genMs > 0) bits.push(`${(rec.tokens / (rec.genMs / 1000)).toFixed(0)}/s excl`);
-		return new Text(`${theme.fg("accent", "▏ ⚡")} ${theme.fg("dim", bits.join(" · "))}`, 0, 0);
+		const line = `${theme.fg("accent", "▏ ⚡")} ${theme.fg("dim", bits.join(" · "))}`;
+		return {
+			render: (w: number) => [truncateToWidth(line, w, "")],
+			invalidate: () => {},
+		};
 	});
 
 	// ------------------------------------------------------------------
@@ -882,14 +904,15 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		await ctx.ui.custom((_tui, theme, _keybindings, done) => {
-			const container = new Container();
-			for (const line of buildLogLines(theme)) {
-				container.addChild(new Text(line, 0, 0));
-			}
-			container.addChild(new Text(theme.fg("dim", "press any key to close"), 1, 0));
+			const lines = [
+				...buildLogLines(theme),
+				theme.fg("dim", "press any key to close"),
+			];
+			// Truncate every row to the actual viewport width: the table is
+			// wider than some terminals, and pi-tui crashes on overflow.
 			return {
-				render: (w: number) => container.render(w),
-				invalidate: () => container.invalidate(),
+				render: (w: number) => lines.map((l) => truncateToWidth(l, w, "…")),
+				invalidate: () => {},
 				handleInput: () => {
 					done(undefined);
 				},
