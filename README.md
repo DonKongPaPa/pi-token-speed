@@ -98,10 +98,10 @@ npm publish
 pi install npm:pi-token-speed
 
 # 或推到 GitHub 后打 tag：
-git remote add origin git@github.com:ray/pi-token-speed.git
+git remote add origin git@github.com:DonKongPaPa/pi-token-speed.git
 git push -u origin main --tags
 git tag v0.1.0 && git push origin v0.1.0
-pi install git:github.com:ray/pi-token-speed@v0.1.0
+pi install git:github.com/DonKongPaPa/pi-token-speed@v0.1.0
 ```
 
 `package.json` 已按 pi 包规范备好：`pi.extensions` 入口、`pi-package` keyword（图库发现）、
