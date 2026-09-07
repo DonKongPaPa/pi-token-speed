@@ -1,6 +1,6 @@
 {
   "name": "pi-token-speed",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Token speed monitor for pi: live tok/s, TTFT, incl/excl-TTFT speeds in the footer, per-message & per-reply subtotals (model/tools/wall split) in the chat transcript",
   "type": "module",
   "main": "./index.ts",
@@ -20,7 +20,9 @@
     "README.md"
   ],
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
